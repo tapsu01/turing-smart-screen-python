@@ -18,9 +18,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import platform
+
 from library import config
 from library.lcd.lcd_comm import Orientation
 from library.lcd.lcd_comm_rev_a import LcdCommRevA
+from library.lcd.lcd_comm_rev_a_usb import LcdCommRevAUsb, is_usb_display_available
 from library.lcd.lcd_comm_rev_b import LcdCommRevB
 from library.lcd.lcd_comm_rev_c import LcdCommRevC
 from library.lcd.lcd_comm_turing_usb import LcdCommTuringUSB
@@ -89,8 +92,13 @@ class Display:
         self.lcd = None
         width, height = _get_theme_size()
         if config.CONFIG_DATA["display"]["REVISION"] == "A":
-            self.lcd = LcdCommRevA(com_port=config.CONFIG_DATA['config']['COM_PORT'],
-                                   update_queue=config.update_queue)
+            # macOS serial driver corrupts the rev. A stream: use raw USB bulk transfers when possible (see issue #7)
+            if platform.system() == "Darwin" and config.CONFIG_DATA["display"].get("MACOS_RAW_USB", True) \
+                    and is_usb_display_available():
+                self.lcd = LcdCommRevAUsb(update_queue=config.update_queue)
+            else:
+                self.lcd = LcdCommRevA(com_port=config.CONFIG_DATA['config']['COM_PORT'],
+                                       update_queue=config.update_queue)
         elif config.CONFIG_DATA["display"]["REVISION"] == "B":
             self.lcd = LcdCommRevB(com_port=config.CONFIG_DATA['config']['COM_PORT'],
                                    update_queue=config.update_queue)
