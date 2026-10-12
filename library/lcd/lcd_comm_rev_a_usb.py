@@ -27,6 +27,7 @@
 # This backend writes to the bulk OUT endpoint with libusb, with one transfer per command and pixel data in 64-byte
 # aligned transfers, and never lets another request be queued between a bitmap header and its pixel data.
 
+import platform
 import time
 from typing import Optional
 
@@ -200,3 +201,11 @@ class LcdCommRevAUsb(LcdCommRevA):
                 self.update_queue.put((self.WriteData, [header]))
                 for chunk in chunked(rgb565le, PIXEL_CHUNK_SIZE):
                     self.update_queue.put((self.WriteLine, [chunk]))
+
+
+def create_lcd_rev_a(com_port: str = "AUTO", update_queue: Optional[queue.Queue] = None,
+                     raw_usb: bool = True) -> LcdCommRevA:
+    # macOS serial driver corrupts the rev. A stream: use raw USB bulk transfers when possible (see issue #7)
+    if raw_usb and platform.system() == "Darwin" and is_usb_display_available():
+        return LcdCommRevAUsb(update_queue=update_queue)
+    return LcdCommRevA(com_port=com_port, update_queue=update_queue)
