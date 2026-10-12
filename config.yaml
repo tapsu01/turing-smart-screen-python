@@ -78,3 +78,22 @@ display:
   # This behavior causes the display to disconnect/reconnect, and the COM port to change.
   # On some displays (like rev. A) it can be an issue, in this case change the value to "false".
   RESET_ON_STARTUP: true
+
+  # macOS only, revision A: send data with raw USB bulk transfers instead of the serial port: true/false
+  # The macOS serial driver corrupts the data stream (screen goes black after the first image, see issue #7).
+  # Needs libusb (brew install libusb). Falls back to the serial port when the display is not found through libusb.
+  MACOS_RAW_USB: true
+
+fun:
+  # Settings of the fun mode program (fun.py): pixel cat running with CPU load, clock with lunar calendar, Pomodoro
+  # Frames per second of the animation. Revision A displays accept ~160 KB/s: only changed areas are sent
+  FPS: 10
+
+  # Pomodoro durations in minutes, and number of focus rounds before a long break
+  POMODORO_FOCUS_MIN: 25
+  POMODORO_SHORT_BREAK_MIN: 5
+  POMODORO_LONG_BREAK_MIN: 15
+  POMODORO_ROUNDS: 4
+
+  # CPU temperature (°C) from which the cat starts sweating
+  PET_HOT_TEMP: 70
