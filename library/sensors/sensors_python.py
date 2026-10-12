@@ -35,6 +35,7 @@ import GPUtil
 import psutil
 
 import library.sensors.sensors as sensors
+import library.sensors.sensors_smc_macos as sensors_smc_macos
 from library.log import logger
 
 # AMD GPU on Linux
@@ -162,10 +163,14 @@ class Cpu(sensors.Cpu):
         except:
             # psutil.sensors_temperatures not available on Windows / MacOS
             pass
+        if math.isnan(cpu_temp) and platform.system() == "Darwin":
+            cpu_temp = sensors_smc_macos.cpu_temperature()
         return cpu_temp
 
     @staticmethod
     def fan_percent(fan_name: str = None) -> float:
+        if platform.system() == "Darwin":
+            return sensors_smc_macos.fan_percent()
         try:
             fans = sensors_fans()
             if fans:
