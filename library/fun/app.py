@@ -74,7 +74,9 @@ class FunApp:
     def __init__(self, lcd: LcdComm, settings: FunSettings, pomodoro: Pomodoro):
         self.settings = settings
         self.pomodoro = pomodoro
-        self.sender = FrameSender(lcd)
+        # The cat area is sent first in each frame, so that its pace stays regular
+        self.sender = FrameSender(lcd, priority_box=(0, PAGE_SIZE[1], StatusStrip.CAT_AREA_WIDTH,
+                                                     PAGE_SIZE[1] + STRIP_HEIGHT))
         self.pet = CpuPet(hot_temp=settings.pet_hot_temp)
         self.clock_page = ClockPage()
         self.pomodoro_page = PomodoroPage()
@@ -104,19 +106,22 @@ class FunApp:
         psutil.cpu_percent(interval=None)  # First call only initializes the measure
         last = time.monotonic()
         next_cpu = next_temperature = last
-        stats_start, stats_frames, stats_pixels = last, 0, 0
+        stats_start, stats_frames, stats_pixels, stats_longest = last, 0, 0, 0.0
 
         while not self.stop_event.is_set():
             start = time.monotonic()
             dt = start - last
             last = start
 
-            # Rev. A displays accept ~160 KB/s whatever the USB transfer size: log what the loop really achieves
+            # Rev. A displays accept ~160 KB/s whatever the USB transfer size: log what the loop really achieves.
+            # The longest frame shows hiccups that an average hides.
             if start - stats_start >= STATS_LOG_PERIOD_S:
                 elapsed = start - stats_start
                 logger.debug(f"Fun mode: {stats_frames / elapsed:.1f} fps, "
-                             f"{stats_pixels * 2 / 1024 / elapsed:.0f} KB/s sent to display")
-                stats_start, stats_frames, stats_pixels = start, 0, 0
+                             f"{stats_pixels * 2 / 1024 / elapsed:.0f} KB/s sent to display, "
+                             f"longest frame {stats_longest * 1000:.0f} ms")
+                stats_start, stats_frames, stats_pixels, stats_longest = start, 0, 0, 0.0
+            stats_longest = max(stats_longest, dt)
 
             if start >= next_cpu:
                 self.cpu_percent = psutil.cpu_percent(interval=None)
