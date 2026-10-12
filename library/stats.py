@@ -768,9 +768,10 @@ class Date:
 
         hour_theme_data = date_theme_data['HOUR']['TEXT']
         time_format = hour_theme_data.get("FORMAT", 'medium')
+        # Recent CLDR data puts a narrow no-break space (U+202F) before AM/PM: most theme fonts have no glyph for it
         display_themed_value(
             theme_data=hour_theme_data,
-            value=f"{babel.dates.format_time(date_now, format=time_format, locale=lc_time)}"
+            value=f"{babel.dates.format_time(date_now, format=time_format, locale=lc_time)}".replace(' ', ' ')
         )
 
 
