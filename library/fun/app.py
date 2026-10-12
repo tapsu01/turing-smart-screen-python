@@ -94,7 +94,7 @@ class FunApp:
 
         frame = Image.new("RGB", (PAGE_SIZE[0], PAGE_SIZE[1] + STRIP_HEIGHT), ui.BACKGROUND)
         frame.paste(page.render(now, state), (0, 0))
-        self.pet.update(dt, self.cpu_percent, self.temperature, StatusStrip.CAT_AREA_WIDTH)
+        self.pet.update(dt, self.cpu_percent, self.temperature, StatusStrip.CAT_AREA_WIDTH, self.settings.fps)
         self.strip.draw(frame, PAGE_SIZE[1], self.pet, self.cpu_percent, self.temperature)
         return frame
 

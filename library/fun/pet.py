@@ -21,7 +21,7 @@
 
 import math
 from functools import lru_cache
-from typing import Tuple
+from typing import Optional, Tuple
 
 from PIL import Image, ImageDraw
 
@@ -38,7 +38,9 @@ PINK = (240, 140, 150)
 EYE = (30, 24, 24)
 SWEAT = (110, 190, 255)
 
-SLEEP_CPU_PERCENT = 3.0  # below this the cat takes a nap
+SLEEP_CPU_PERCENT = 3.0  # below this (smoothed) load the cat takes a nap...
+WAKE_CPU_PERCENT = 6.0  # ...and wakes up only above this one, so that it does not flicker around the threshold
+CPU_SMOOTHING_S = 3.0  # time constant of the load smoothing: the CPU % measured each second jumps a lot
 MIN_SPEED = 25.0  # px/s on screen, at SLEEP_CPU_PERCENT
 MAX_SPEED = 300.0  # px/s on screen, at 100% CPU
 STEP_PX = 12.0  # distance between two running frames
@@ -112,35 +114,50 @@ class CpuPet:
         self.step_distance = 0.0
         self.frame = 0
         self.time = 0.0
-        self.cpu_percent = 0.0
+        self.smoothed_cpu_percent: Optional[float] = None
+        self.sleeping = False
         self.temperature = math.nan
-
-    @property
-    def sleeping(self) -> bool:
-        return self.cpu_percent < SLEEP_CPU_PERCENT
 
     @property
     def hot(self) -> bool:
         return not math.isnan(self.temperature) and self.temperature >= self.hot_temp
 
-    def update(self, dt: float, cpu_percent: float, temperature: float, area_width: int):
+    @property
+    def speed(self) -> float:
+        """Running speed in px/s, from the smoothed CPU load"""
+        load = (self.smoothed_cpu_percent or 0.0) - SLEEP_CPU_PERCENT
+        load = min(1.0, max(0.0, load / (100 - SLEEP_CPU_PERCENT)))
+        return MIN_SPEED + (MAX_SPEED - MIN_SPEED) * load
+
+    def update(self, dt: float, cpu_percent: float, temperature: float, area_width: int, fps: float):
         self.time += dt
-        self.cpu_percent = cpu_percent
         self.temperature = temperature
+        if self.smoothed_cpu_percent is None:
+            self.smoothed_cpu_percent = cpu_percent
+        else:
+            weight = 1 - math.exp(-dt / CPU_SMOOTHING_S)
+            self.smoothed_cpu_percent += (cpu_percent - self.smoothed_cpu_percent) * weight
+
+        if self.sleeping and self.smoothed_cpu_percent > WAKE_CPU_PERCENT:
+            self.sleeping = False
+        elif not self.sleeping and self.smoothed_cpu_percent < SLEEP_CPU_PERCENT:
+            self.sleeping = True
         if self.sleeping:
             return
 
-        load = min(1.0, max(0.0, (cpu_percent - SLEEP_CPU_PERCENT) / (100 - SLEEP_CPU_PERCENT)))
-        dx = (MIN_SPEED + (MAX_SPEED - MIN_SPEED) * load) * dt
+        # Same step for every drawn frame, whatever the real frame duration: when a frame takes longer to send,
+        # the cat slows down a little instead of jumping forward
+        dx = self.speed / fps
         self.x += dx
         sprite_width = SPRITE_SIZE[0] * SCALE
         if self.x > area_width:
             self.x = -sprite_width
 
-        # At most one leg frame per update, otherwise high speeds alias into a random-looking animation
+        # At most one leg frame per update, otherwise high speeds alias into a random-looking animation.
+        # The remaining distance is kept (but capped) so that the leg cadence stays regular.
         self.step_distance += dx
         if self.step_distance >= STEP_PX:
-            self.step_distance = 0
+            self.step_distance = min(self.step_distance - STEP_PX, STEP_PX)
             self.frame = (self.frame + 1) % len(RUN_LEGS)
 
     def draw(self, img: Image.Image, box: Tuple[int, int, int, int]):
