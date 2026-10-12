@@ -22,6 +22,7 @@
 # For all platforms (Linux, Windows, macOS) but not all HW is supported
 
 import math
+import os
 import platform
 import sys
 from collections import namedtuple
@@ -451,25 +452,29 @@ class Memory(sensors.Memory):
             return -1
 
 
+# On macOS "/" is the small read-only system volume: user data lives on the Data volume of the same APFS container
+DISK_PATH = "/System/Volumes/Data" if platform.system() == "Darwin" and os.path.isdir("/System/Volumes/Data") else "/"
+
+
 class Disk(sensors.Disk):
     @staticmethod
     def disk_usage_percent() -> float:
         try:
-            return psutil.disk_usage("/").percent
+            return psutil.disk_usage(DISK_PATH).percent
         except:
             return math.nan
 
     @staticmethod
     def disk_used() -> int:  # In bytes
         try:
-            return psutil.disk_usage("/").used
+            return psutil.disk_usage(DISK_PATH).used
         except:
             return -1
 
     @staticmethod
     def disk_free() -> int:  # In bytes
         try:
-            return psutil.disk_usage("/").free
+            return psutil.disk_usage(DISK_PATH).free
         except:
             return -1
 
