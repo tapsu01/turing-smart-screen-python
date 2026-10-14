@@ -36,6 +36,7 @@ from pathlib import Path
 from PIL import Image
 
 from library import config
+from library.app_mode import launch_script, switch_to
 from library.fun.app import FunApp, FunSettings, Mode
 from library.fun.notify import notify_phase_change
 from library.fun.pomodoro import Phase, Pomodoro
@@ -56,7 +57,7 @@ TEST_POMODORO = dict(pomodoro_focus_min=20 / 60, pomodoro_short_break_min=10 / 6
                      pomodoro_rounds=2)
 
 
-def build_tray_menu(app: FunApp, pomodoro: Pomodoro, on_exit) -> "pystray.Menu":
+def build_tray_menu(app: FunApp, pomodoro: Pomodoro, on_monitor, on_configure, on_exit) -> "pystray.Menu":
     def phase_is(*phases):
         return lambda item: pomodoro.state().phase in phases
 
@@ -93,6 +94,8 @@ def build_tray_menu(app: FunApp, pomodoro: Pomodoro, on_exit) -> "pystray.Menu":
             pystray.MenuItem("Pomodoro", set_mode(Mode.POMODORO), checked=mode_is(Mode.POMODORO), radio=True),
         )),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Theo dõi hệ thống", on_monitor),
+        pystray.MenuItem("Cấu hình…", on_configure),
         pystray.MenuItem("Thoát", on_exit),
     )
 
@@ -146,6 +149,16 @@ def main():
         if icon is not None:
             icon.stop()
 
+    def switch_to_monitor(icon, item):
+        # Start the system monitor first: it retries to open the display until this program has released it
+        switch_to("monitor")
+        stop(icon)
+
+    def open_configure(icon, item):
+        # Same as the system monitor: the configuration window needs the display to be free for "Save and run"
+        launch_script("configure.py")
+        stop(icon)
+
     if pystray is None:
         logger.warning("Tray icon not available: Pomodoro cannot be controlled, stop with Ctrl+C")
         render_thread.join()
@@ -153,7 +166,8 @@ def main():
 
     tray_icon = pystray.Icon(name="Turing Fun Mode", title="Turing Fun Mode",
                              icon=Image.open(MAIN_DIRECTORY / "res/icons/monitor-icon-17865/64.png"))
-    tray_icon.menu = build_tray_menu(app, pomodoro, stop)
+    tray_icon.menu = build_tray_menu(app, pomodoro, on_monitor=switch_to_monitor, on_configure=open_configure,
+                                     on_exit=stop)
     if platform.system() == "Darwin":
         from library.tray import hide_macos_dock_icon
 

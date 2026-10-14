@@ -132,6 +132,13 @@ if __name__ == "__main__":
 
         clean_stop(tray_icon)
 
+    def on_fun_mode_tray(tray_icon, item):
+        logger.info("Switch to fun mode from tray icon")
+        from library.app_mode import switch_to
+
+        switch_to("fun")
+        clean_stop(tray_icon)
+
     def on_exit_tray(tray_icon, item):
         logger.info("Exit from tray icon")
         clean_stop(tray_icon)
@@ -180,6 +187,9 @@ if __name__ == "__main__":
                 pystray.MenuItem(
                     text='Configure',
                     action=on_configure_tray),
+                pystray.MenuItem(
+                    text='Fun mode',
+                    action=on_fun_mode_tray),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem(
                     text='Exit',
