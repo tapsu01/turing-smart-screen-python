@@ -82,7 +82,7 @@ RGB_LED_MARGIN = 12
 # Resize editor if display is too big (e.g. 8.8" displays are 1920x480), can be changed later by zoom buttons
 RESIZE_FACTOR = 2 if (display.lcd.get_width() > 1000 or display.lcd.get_height() > 1000) else 1
 
-ERROR_IN_THEME = Image.open("res/docs/error-in-theme.png")
+ERROR_IN_THEME = Image.open(config.MAIN_DIRECTORY / "res/docs/error-in-theme.png")
 
 
 def refresh_theme():
