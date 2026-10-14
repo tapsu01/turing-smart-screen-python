@@ -56,6 +56,7 @@ Or the troubleshooting page: https://github.com/mathoudebine/turing-smart-screen
     except:
         os._exit(0)
 
+from library.paths import config_file
 from library.sensors.sensors_python import sensors_fans, is_cpu_fan
 
 TURING_MODEL = "Turing Smart Screen"
@@ -450,7 +451,7 @@ class TuringConfigWindow:
             self.theme_author.place(x=10, y=self.theme_preview_img.height() + 15)
 
     def load_config_values(self):
-        with open(MAIN_DIRECTORY / "config.yaml", "rt", encoding='utf8') as stream:
+        with open(config_file(), "rt", encoding='utf8') as stream:
             self.config, ind, bsi = ruamel.yaml.util.load_yaml_guess_indent(stream)
 
         # Check if theme is valid
@@ -567,7 +568,7 @@ class TuringConfigWindow:
         self.config['display']['DISPLAY_REVERSE'] = [k for k, v in reverse_map.items() if v == self.orient_cb.get()][0]
         self.config['display']['BRIGHTNESS'] = int(self.brightness_slider.get())
 
-        with open(MAIN_DIRECTORY / "config.yaml", "w", encoding='utf-8') as file:
+        with open(config_file(), "w", encoding='utf-8') as file:
             ruamel.yaml.YAML().dump(self.config, file)
 
     def save_additional_config(self, ping: str, api_key: str, lat: str, long: str, unit: str, lang: str):
@@ -578,7 +579,7 @@ class TuringConfigWindow:
         self.config['config']['WEATHER_UNITS'] = unit
         self.config['config']['WEATHER_LANGUAGE'] = lang
 
-        with open(MAIN_DIRECTORY / "config.yaml", "w", encoding='utf-8') as file:
+        with open(config_file(), "w", encoding='utf-8') as file:
             ruamel.yaml.YAML().dump(self.config, file)
 
     def on_theme_change(self, e=None):
