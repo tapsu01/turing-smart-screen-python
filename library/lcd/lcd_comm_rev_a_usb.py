@@ -28,9 +28,13 @@
 # aligned transfers, and never lets another request be queued between a bitmap header and its pixel data.
 
 import platform
+import sys
 import time
+from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
+import usb.backend.libusb1
 import usb.core
 import usb.util
 
@@ -48,10 +52,26 @@ USB_WRITE_TIMEOUT = 5000  # ms
 USB_READ_TIMEOUT = 500  # ms
 PIXEL_CHUNK_SIZE = 64 * 64  # bytes, must stay a multiple of the 64-byte bulk packet size
 
+# Name of the libusb library shipped inside the macOS app bundle (see turing-screen-macos.spec)
+BUNDLED_LIBUSB = "libusb-1.0.0.dylib"
+
+
+@lru_cache(maxsize=1)
+def _usb_backend():
+    """libusb backend: the library shipped in a frozen build if any, otherwise pyusb's own system lookup"""
+    bundled = Path(getattr(sys, "_MEIPASS", "")) / BUNDLED_LIBUSB
+    if getattr(sys, "frozen", False) and bundled.is_file():
+        return usb.backend.libusb1.get_backend(find_library=lambda name: str(bundled))
+    return None
+
+
+def _find_display():
+    return usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID, backend=_usb_backend())
+
 
 def is_usb_display_available() -> bool:
     try:
-        return usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID) is not None
+        return _find_display() is not None
     except (usb.core.NoBackendError, usb.core.USBError, ValueError):
         return False
 
@@ -69,7 +89,7 @@ class LcdCommRevAUsb(LcdCommRevA):
     def openSerial(self):
         for attempt in range(1, USB_OPEN_ATTEMPTS + 1):
             try:
-                dev = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
+                dev = _find_display()
                 if dev is None:
                     raise usb.core.USBError("display not found")
                 try:
