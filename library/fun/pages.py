@@ -27,6 +27,7 @@ from typing import Hashable, Optional
 from PIL import Image, ImageDraw
 
 from library.fun import ui
+from library.fun.care import LOW_STAT, MAX_STAT, CareState
 from library.fun.lunar import solar_to_lunar
 from library.fun.pet import CpuPet
 from library.fun.pomodoro import Phase, PomodoroState
@@ -210,7 +211,8 @@ class StatusStrip:
     CAT_AREA_WIDTH = 330
     STATS_X = 344
 
-    def draw(self, img: Image.Image, top: int, pet: CpuPet, cpu_percent: float, temperature: float):
+    def draw(self, img: Image.Image, top: int, pet: CpuPet, cpu_percent: float, temperature: float,
+             care: Optional[CareState] = None):
         draw = ImageDraw.Draw(img)
         width = img.width
         draw.rectangle((0, top, width, top + STRIP_HEIGHT), fill=ui.STRIP)
@@ -228,3 +230,24 @@ class StatusStrip:
                                        (self.STATS_X + 70, "NHIỆT ĐỘ", temperature_text, temperature_color)):
             draw.text((x, top + 10), label, font=label_font, fill=ui.MUTED)
             draw.text((x, top + 26), value, font=value_font, fill=color)
+
+        if care is not None:
+            self._draw_care_bar(draw, self.STATS_X, top + 2, care.food, _draw_fish_icon)
+            self._draw_care_bar(draw, self.STATS_X + 70, top + 2, care.joy, _draw_heart_icon)
+
+    @staticmethod
+    def _draw_care_bar(draw: ImageDraw.ImageDraw, x: int, y: int, value: float, icon):
+        icon(draw, x, y)
+        color = ui.GREEN if value >= LOW_STAT else ui.TOMATO
+        ui.draw_bar(draw, (x + 10, y + 1, x + 60, y + 5), value / MAX_STAT, color, ui.GROUND)
+
+
+def _draw_fish_icon(draw: ImageDraw.ImageDraw, x: int, y: int):
+    draw.ellipse((x, y + 1, x + 5, y + 5), fill=ui.BLUE)
+    draw.polygon([(x + 5, y + 3), (x + 8, y + 1), (x + 8, y + 5)], fill=ui.BLUE)
+
+
+def _draw_heart_icon(draw: ImageDraw.ImageDraw, x: int, y: int):
+    draw.ellipse((x, y, x + 4, y + 4), fill=ui.TOMATO)
+    draw.ellipse((x + 3, y, x + 7, y + 4), fill=ui.TOMATO)
+    draw.polygon([(x, y + 3), (x + 7, y + 3), (x + 3.5, y + 7)], fill=ui.TOMATO)

@@ -142,3 +142,6 @@ tmp
 
 version.txt
 external/LibreHardwareMonitor/LibreHardwareMonitorLib.sys
+
+# Cat care state of the fun mode
+pet_state.json

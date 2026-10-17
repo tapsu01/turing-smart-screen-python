@@ -22,16 +22,21 @@ import math
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
+from pathlib import Path
+from typing import Optional, Tuple
 
 import psutil
 from PIL import Image
 
 from library.fun import ui
+from library.fun.care import CareState, PetCare
+from library.fun.costume import Costume, costume_for, parse_birthday
 from library.fun.frame_sender import FrameSender
+from library.fun.notify import notify
 from library.fun.pages import PAGE_SIZE, STRIP_HEIGHT, ClockPage, PomodoroPage, StatusStrip
-from library.fun.pet import CpuPet
+from library.fun.pet import Action, CpuPet
 from library.fun.pomodoro import Phase, Pomodoro
 from library.lcd.lcd_comm import LcdComm
 from library.log import logger
@@ -40,6 +45,9 @@ from library.sensors.sensors_python import Cpu
 CPU_REFRESH_S = 1.0
 TEMPERATURE_REFRESH_S = 2.0
 STATS_LOG_PERIOD_S = 10.0
+CARE_SAVE_PERIOD_S = 300.0
+CARE_MAX_TICK_S = 5.0  # a long hiccup (laptop asleep...) does not starve the cat
+HUNGER_ALERT_FOOD = 20.0
 
 
 class Mode(Enum):
@@ -56,6 +64,8 @@ class FunSettings:
     pomodoro_long_break_min: float = 15
     pomodoro_rounds: int = 4
     pet_hot_temp: float = 70.0
+    pet_care: bool = True
+    pet_birthday: Optional[Tuple[int, int]] = None  # (day, month)
 
     @classmethod
     def from_config(cls, data: dict) -> "FunSettings":
@@ -67,17 +77,29 @@ class FunSettings:
             pomodoro_long_break_min=float(data.get("POMODORO_LONG_BREAK_MIN", defaults.pomodoro_long_break_min)),
             pomodoro_rounds=int(data.get("POMODORO_ROUNDS", defaults.pomodoro_rounds)),
             pet_hot_temp=float(data.get("PET_HOT_TEMP", defaults.pet_hot_temp)),
+            pet_care=bool(data.get("PET_CARE", defaults.pet_care)),
+            pet_birthday=parse_birthday(data.get("PET_BIRTHDAY") or ""),
         )
 
 
 class FunApp:
-    def __init__(self, lcd: LcdComm, settings: FunSettings, pomodoro: Pomodoro):
+    def __init__(self, lcd: LcdComm, settings: FunSettings, pomodoro: Pomodoro, care_path: Optional[Path] = None):
         self.settings = settings
         self.pomodoro = pomodoro
         # The cat area is sent first in each frame, so that its pace stays regular
         self.sender = FrameSender(lcd, priority_box=(0, PAGE_SIZE[1], StatusStrip.CAT_AREA_WIDTH,
                                                      PAGE_SIZE[1] + STRIP_HEIGHT))
         self.pet = CpuPet(hot_temp=settings.pet_hot_temp)
+        # Only grows when a focus round runs to its end: a skipped round is not celebrated
+        self.last_completed = pomodoro.state().completed_today
+        # Food and joy of the cat, saved to care_path (no saving without it)
+        self.care_path = care_path
+        self.care = PetCare.load(care_path) if care_path else PetCare()
+        self.care_enabled = settings.pet_care  # changed from the tray menu
+        self.hunger_alerted = False
+        # Outfit: None follows the calendar, a costume chosen in the tray menu is kept
+        self.costume_choice: Optional[Costume] = None
+        self.costume_of_day: Optional[Tuple[date, Costume]] = None
         self.clock_page = ClockPage()
         self.pomodoro_page = PomodoroPage()
         self.strip = StatusStrip()
@@ -89,15 +111,61 @@ class FunApp:
     def stop(self):
         self.stop_event.set()
 
+    def feed_pet(self):
+        """From the tray menu: the cat eats, or refuses when it is not hungry"""
+        eaten = self.care.feed()
+        self.pet.request(Action.EAT, variant=not eaten)
+        self.save_care()
+
+    def pet_cat(self):
+        """From the tray menu: the cat purrs"""
+        self.care.pet()
+        self.pet.request(Action.PURR)
+        self.save_care()
+
+    def save_care(self):
+        if self.care_path:
+            self.care.save(self.care_path)
+
+    def costume(self, today: date) -> Costume:
+        if self.costume_choice is not None:
+            return self.costume_choice
+        if self.costume_of_day is None or self.costume_of_day[0] != today:
+            self.costume_of_day = (today, costume_for(today, self.settings.pet_birthday))
+        return self.costume_of_day[1]
+
+    def update_care(self, dt: float, focus_done: bool) -> Optional[CareState]:
+        if not self.care_enabled:
+            self.pet.hungry = self.pet.sad = False
+            return None
+        self.care.tick(min(dt, CARE_MAX_TICK_S))
+        if focus_done:
+            self.care.reward()
+        care = self.care.state()
+        self.pet.hungry, self.pet.sad = care.hungry, care.sad
+        # Once per hungry period: the alert comes back only after the cat has eaten
+        if care.food < HUNGER_ALERT_FOOD and not self.hunger_alerted:
+            self.hunger_alerted = True
+            notify("Mèo đói rồi", "Cho mèo ăn chút cá nhé 🐟")
+        elif not care.hungry:
+            self.hunger_alerted = False
+        return care
+
     def render(self, now: datetime, dt: float) -> Image.Image:
         state = self.pomodoro.state()
         show_pomodoro = self.mode == Mode.POMODORO or (self.mode == Mode.AUTO and state.phase != Phase.IDLE)
         page = self.pomodoro_page if show_pomodoro else self.clock_page
+        focus_done = state.completed_today > self.last_completed
+        if focus_done and self.pet.celebrate_enabled:
+            self.pet.celebrate(big=state.phase == Phase.LONG_BREAK)
+        self.last_completed = state.completed_today
+        care = self.update_care(dt, focus_done)
+        self.pet.costume = self.costume(now.date())
 
         frame = Image.new("RGB", (PAGE_SIZE[0], PAGE_SIZE[1] + STRIP_HEIGHT), ui.BACKGROUND)
         frame.paste(page.render(now, state), (0, 0))
         self.pet.update(dt, self.cpu_percent, self.temperature, StatusStrip.CAT_AREA_WIDTH, self.settings.fps)
-        self.strip.draw(frame, PAGE_SIZE[1], self.pet, self.cpu_percent, self.temperature)
+        self.strip.draw(frame, PAGE_SIZE[1], self.pet, self.cpu_percent, self.temperature, care)
         return frame
 
     def run(self):
@@ -106,6 +174,7 @@ class FunApp:
         psutil.cpu_percent(interval=None)  # First call only initializes the measure
         last = time.monotonic()
         next_cpu = next_temperature = last
+        next_care_save = last + CARE_SAVE_PERIOD_S
         stats_start, stats_frames, stats_pixels, stats_longest = last, 0, 0, 0.0
 
         while not self.stop_event.is_set():
@@ -130,6 +199,10 @@ class FunApp:
                 self.temperature = Cpu.temperature()
                 next_temperature = start + TEMPERATURE_REFRESH_S
 
+            if start >= next_care_save:
+                self.save_care()
+                next_care_save = start + CARE_SAVE_PERIOD_S
+
             self.pomodoro.tick()
             try:
                 stats_pixels += self.sender.push(self.render(datetime.now(), dt))
@@ -140,3 +213,4 @@ class FunApp:
                 self.sender.invalidate()
 
             self.stop_event.wait(max(0.0, frame_duration - (time.monotonic() - start)))
+        self.save_care()

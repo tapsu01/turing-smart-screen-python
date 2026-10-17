@@ -98,6 +98,12 @@ fun:
   # CPU temperature (°C) from which the cat starts sweating
   PET_HOT_TEMP: 70
 
+  # Cat care: food and joy go down while the program runs, feed and pet the cat from the tray menu
+  PET_CARE: true
+
+  # Your birthday (DD/MM): the cat wears a party hat that day. Leave empty to disable
+  PET_BIRTHDAY: ""
+
 app:
   # Mode started by the macOS app (Turing Screen.app), remembered when switching from the tray menu
   # - monitor  system monitor with the theme selected above (main.py)

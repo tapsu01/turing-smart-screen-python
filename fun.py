@@ -39,10 +39,13 @@ from library import config
 from library.app_mode import launch_script, switch_to
 from library.fun.app import FunApp, FunSettings, Mode
 from library.fun.notify import notify_phase_change
+from library.fun.costume import COSTUME_LABELS
+from library.fun.pet import Action
 from library.fun.pomodoro import Phase, Pomodoro
 from library.lcd.lcd_comm import Orientation
 from library.lcd.lcd_comm_rev_a_usb import create_lcd_rev_a
 from library.log import logger
+from library.paths import user_data_dir
 
 try:
     import pystray
@@ -80,6 +83,27 @@ def build_tray_menu(app: FunApp, pomodoro: Pomodoro, on_monitor, on_configure, o
     def mode_is(mode: Mode):
         return lambda item: app.mode == mode
 
+    def pet_option(name: str, text: str, target=None) -> "pystray.MenuItem":
+        def owner():
+            return app.pet if target is None else target
+
+        def run(icon, item):
+            setattr(owner(), name, not getattr(owner(), name))
+
+        return pystray.MenuItem(text, run, checked=lambda item: getattr(owner(), name))
+
+    def pet_action(pet_action_: Action, variant: bool = False):
+        def run(icon, item):
+            app.pet.request(pet_action_, variant)
+
+        return run
+
+    def costume_item(text: str, costume) -> "pystray.MenuItem":
+        def run(icon, item):
+            app.costume_choice = costume
+
+        return pystray.MenuItem(text, run, checked=lambda item: app.costume_choice == costume, radio=True)
+
     not_idle = phase_is(Phase.FOCUS, Phase.SHORT_BREAK, Phase.LONG_BREAK)
     return pystray.Menu(
         pystray.MenuItem("Bắt đầu Pomodoro", action(pomodoro.start), visible=phase_is(Phase.IDLE)),
@@ -92,6 +116,25 @@ def build_tray_menu(app: FunApp, pomodoro: Pomodoro, on_monitor, on_configure, o
             pystray.MenuItem("Tự động", set_mode(Mode.AUTO), checked=mode_is(Mode.AUTO), radio=True),
             pystray.MenuItem("Đồng hồ", set_mode(Mode.CLOCK), checked=mode_is(Mode.CLOCK), radio=True),
             pystray.MenuItem("Pomodoro", set_mode(Mode.POMODORO), checked=mode_is(Mode.POMODORO), radio=True),
+        )),
+        pystray.MenuItem("Mèo", pystray.Menu(
+            pystray.MenuItem("Cho ăn", lambda icon, item: app.feed_pet(), enabled=lambda item: app.care_enabled),
+            pystray.MenuItem("Vuốt ve", lambda icon, item: app.pet_cat(), enabled=lambda item: app.care_enabled),
+            pet_option("force_sleep", "Cho mèo đi ngủ"),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Giật mình", pet_action(Action.STARTLE)),
+            pystray.MenuItem("Ngáp, vươn vai", pet_action(Action.STRETCH)),
+            pystray.MenuItem("Ăn mừng", pet_action(Action.CELEBRATE)),
+            pystray.MenuItem("Ăn mừng to", pet_action(Action.CELEBRATE, variant=True)),
+            pystray.MenuItem("Trang phục", pystray.Menu(
+                costume_item("Theo ngày", None),
+                *(costume_item(label, costume) for costume, label in COSTUME_LABELS.items()),
+            )),
+            pystray.Menu.SEPARATOR,
+            pet_option("startle_enabled", "Tự giật mình khi CPU vọt lên"),
+            pet_option("stretch_enabled", "Ngáp, vươn vai khi thức dậy"),
+            pet_option("celebrate_enabled", "Ăn mừng khi xong Pomodoro"),
+            pet_option("care_enabled", "Nuôi mèo (đói, buồn)", target=app),
         )),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Theo dõi hệ thống", on_monitor),
@@ -135,7 +178,7 @@ def main():
                         long_break_s=settings.pomodoro_long_break_min * 60,
                         rounds=settings.pomodoro_rounds,
                         on_phase_change=notify_phase_change)
-    app = FunApp(lcd, settings, pomodoro)
+    app = FunApp(lcd, settings, pomodoro, care_path=user_data_dir() / "pet_state.json")
     render_thread = threading.Thread(target=app.run, name="fun-render", daemon=True)
     render_thread.start()
     logger.info("Fun mode started")
